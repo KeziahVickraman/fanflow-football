@@ -1,0 +1,6 @@
+{
+  "name": "FanFlow",
+  "description": "European football screening planner & match-night playbook for sports bars and cafes in Singapore.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
