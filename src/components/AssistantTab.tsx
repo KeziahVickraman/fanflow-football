@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Send, Bot, User, ChevronDown, ChevronUp, Sparkles, BookOpen, AlertCircle, HelpCircle } from 'lucide-react';
+import { Send, Bot, User, ChevronDown, ChevronUp, Sparkles, BookOpen, AlertCircle } from 'lucide-react';
 import type { Venue } from '../data/simulatedDb.ts';
 import type { MatchFixture } from '../shared/scoringEngine.ts';
 
@@ -63,7 +63,6 @@ export const AssistantTab: React.FC<AssistantTabProps> = ({
     setIsLoading(true);
 
     try {
-      // Send planner context to server
       const res = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -89,7 +88,6 @@ export const AssistantTab: React.FC<AssistantTabProps> = ({
 
       setMessages(prev => [...prev, assistantMsg]);
       if (data.sources && data.sources.length > 0) {
-        // Auto-expand sources for first query
         setExpandedSources(prev => ({ ...prev, [assistantMsg.id]: true }));
       }
     } catch (err: any) {
@@ -109,19 +107,19 @@ export const AssistantTab: React.FC<AssistantTabProps> = ({
   return (
     <div className="max-w-4xl mx-auto space-y-5">
       {/* Header Banner */}
-      <div className="bg-slate-800/80 border border-slate-700/80 rounded-2xl p-5 shadow-lg flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+      <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div className="flex items-center gap-3">
-          <div className="w-11 h-11 rounded-xl bg-teal-500/20 border border-teal-500/40 flex items-center justify-center text-teal-300 shrink-0">
+          <div className="w-11 h-11 rounded-2xl bg-blue-600 flex items-center justify-center text-white shadow-xs shrink-0">
             <Bot className="w-6 h-6" />
           </div>
           <div>
             <div className="flex items-center gap-2">
-              <h2 className="text-base font-bold text-white">FanFlow RAG Knowledge Assistant</h2>
-              <span className="text-[10px] font-extrabold uppercase px-2 py-0.5 rounded-full bg-teal-500/20 text-teal-300 border border-teal-500/30">
+              <h2 className="text-base font-extrabold text-slate-900">FanFlow RAG Knowledge Assistant</h2>
+              <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-full bg-amber-100 text-amber-900 border border-amber-300">
                 Bonus Feature
               </span>
             </div>
-            <p className="text-xs text-slate-400 mt-0.5">
+            <p className="text-xs text-slate-500 mt-0.5 font-medium">
               Strictly grounded on <code>knowledge.md</code> chunks with ID citations [RULE-xx], [DB-xx], [FAQ-xx].
             </p>
           </div>
@@ -130,8 +128,8 @@ export const AssistantTab: React.FC<AssistantTabProps> = ({
 
       {/* Preset Question Chips */}
       <div>
-        <span className="text-xs font-semibold text-slate-400 mb-2 flex items-center gap-1.5">
-          <Sparkles className="w-3.5 h-3.5 text-emerald-400" />
+        <span className="text-xs font-bold text-slate-600 mb-2 flex items-center gap-1.5">
+          <Sparkles className="w-3.5 h-3.5 text-blue-600" />
           Suggested Questions:
         </span>
         <div className="flex flex-wrap gap-2">
@@ -140,7 +138,7 @@ export const AssistantTab: React.FC<AssistantTabProps> = ({
               key={idx}
               onClick={() => handleSend(q)}
               disabled={isLoading}
-              className="text-xs px-3 py-1.5 rounded-xl bg-slate-800/90 hover:bg-slate-700 border border-slate-700 text-slate-200 transition-colors disabled:opacity-50 text-left"
+              className="text-xs px-3 py-1.5 rounded-xl bg-white hover:bg-blue-50 border border-slate-200 text-slate-800 font-semibold transition-colors disabled:opacity-50 text-left shadow-2xs"
             >
               {q}
             </button>
@@ -149,7 +147,7 @@ export const AssistantTab: React.FC<AssistantTabProps> = ({
       </div>
 
       {/* Chat Messages Log */}
-      <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-4 sm:p-6 min-h-[380px] max-h-[550px] overflow-y-auto space-y-4 shadow-inner">
+      <div className="bg-slate-50 border border-slate-200 rounded-3xl p-4 sm:p-6 min-h-[380px] max-h-[550px] overflow-y-auto space-y-4 shadow-inner">
         {messages.map(msg => (
           <div
             key={msg.id}
@@ -158,7 +156,7 @@ export const AssistantTab: React.FC<AssistantTabProps> = ({
             }`}
           >
             {msg.sender === 'assistant' && (
-              <div className="w-8 h-8 rounded-lg bg-teal-500/20 border border-teal-500/40 flex items-center justify-center text-teal-300 shrink-0 mt-0.5">
+              <div className="w-8 h-8 rounded-xl bg-blue-100 border border-blue-200 flex items-center justify-center text-blue-700 shrink-0 mt-0.5 shadow-2xs">
                 <Bot className="w-4 h-4" />
               </div>
             )}
@@ -166,28 +164,28 @@ export const AssistantTab: React.FC<AssistantTabProps> = ({
             <div
               className={`max-w-[85%] rounded-2xl p-4 text-xs sm:text-sm leading-relaxed ${
                 msg.sender === 'user'
-                  ? 'bg-emerald-600 text-white font-medium rounded-tr-none'
-                  : 'bg-slate-800/90 text-slate-200 border border-slate-700/80 rounded-tl-none'
+                  ? 'bg-blue-600 text-white font-medium rounded-tr-none shadow-xs'
+                  : 'bg-white text-slate-800 border border-slate-200 rounded-tl-none shadow-xs'
               }`}
             >
               <div className="whitespace-pre-line">{msg.text}</div>
 
               {/* Gemini Offline Banner */}
               {msg.geminiOffline && (
-                <div className="mt-3 p-2.5 rounded-lg bg-amber-500/10 border border-amber-500/30 text-amber-200 text-xs flex items-start gap-2">
-                  <AlertCircle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+                <div className="mt-3 p-2.5 rounded-xl bg-amber-50 border border-amber-300 text-amber-900 text-xs flex items-start gap-2 font-medium">
+                  <AlertCircle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
                   <span>
-                    Gemini AI is currently offline or unconfigured. You can check <code>GEMINI_API_KEY</code> in Settings &gt; Secrets, but the core Planner, Posters, and Venue Data work independently.
+                    Gemini AI live generation is currently offline or rate-limited. Grounded knowledge base sources are retrieved and displayed directly below.
                   </span>
                 </div>
               )}
 
               {/* Collapsible Sources Drawer */}
               {msg.sources && msg.sources.length > 0 && (
-                <div className="mt-3 pt-3 border-t border-slate-700/60">
+                <div className="mt-3 pt-3 border-t border-slate-200">
                   <button
                     onClick={() => toggleSource(msg.id)}
-                    className="flex items-center gap-1.5 text-xs font-semibold text-emerald-400 hover:text-emerald-300 transition-colors"
+                    className="flex items-center gap-1.5 text-xs font-bold text-blue-700 hover:text-blue-900 transition-colors"
                   >
                     <BookOpen className="w-3.5 h-3.5" />
                     <span>Sources ({msg.sources.length} Retrieved Chunks)</span>
@@ -203,16 +201,16 @@ export const AssistantTab: React.FC<AssistantTabProps> = ({
                       {msg.sources.map((chunk, cIdx) => (
                         <div
                           key={cIdx}
-                          className="p-2.5 rounded-lg bg-slate-900/90 border border-slate-700/60 text-xs text-slate-300"
+                          className="p-3 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-800"
                         >
                           <div className="flex items-center justify-between mb-1">
-                            <span className="font-mono font-bold text-emerald-400 text-[11px]">
+                            <span className="font-mono font-black text-blue-700 text-[11px]">
                               {chunk.id}
                             </span>
-                            <span className="text-[10px] text-slate-400">{chunk.section}</span>
+                            <span className="text-[10px] font-semibold text-slate-500 uppercase">{chunk.section}</span>
                           </div>
-                          <div className="font-semibold text-white mb-1">{chunk.heading}</div>
-                          <div className="text-[11px] text-slate-400 line-clamp-3 leading-relaxed">
+                          <div className="font-bold text-slate-900 mb-1">{chunk.heading}</div>
+                          <div className="text-[11px] text-slate-600 line-clamp-3 leading-relaxed">
                             {chunk.content}
                           </div>
                         </div>
@@ -224,7 +222,7 @@ export const AssistantTab: React.FC<AssistantTabProps> = ({
             </div>
 
             {msg.sender === 'user' && (
-              <div className="w-8 h-8 rounded-lg bg-emerald-600 flex items-center justify-center text-white shrink-0 mt-0.5">
+              <div className="w-8 h-8 rounded-xl bg-blue-600 flex items-center justify-center text-white shrink-0 mt-0.5 shadow-xs">
                 <User className="w-4 h-4" />
               </div>
             )}
@@ -233,11 +231,11 @@ export const AssistantTab: React.FC<AssistantTabProps> = ({
 
         {isLoading && (
           <div className="flex items-center gap-3">
-            <div className="w-8 h-8 rounded-lg bg-teal-500/20 border border-teal-500/40 flex items-center justify-center text-teal-300 shrink-0">
+            <div className="w-8 h-8 rounded-xl bg-blue-100 border border-blue-200 flex items-center justify-center text-blue-700 shrink-0">
               <Bot className="w-4 h-4 animate-pulse" />
             </div>
-            <div className="bg-slate-800/90 border border-slate-700/80 rounded-2xl rounded-tl-none p-3.5 text-xs text-slate-400 flex items-center gap-2">
-              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping"></span>
+            <div className="bg-white border border-slate-200 rounded-2xl rounded-tl-none p-3.5 text-xs text-slate-600 flex items-center gap-2 shadow-2xs font-medium">
+              <span className="w-2 h-2 rounded-full bg-blue-600 animate-ping"></span>
               Retrieving knowledge chunks and consulting Gemini 3.8 Flash...
             </div>
           </div>
@@ -253,12 +251,12 @@ export const AssistantTab: React.FC<AssistantTabProps> = ({
           onChange={(e) => setInputQuery(e.target.value)}
           onKeyDown={(e) => e.key === 'Enter' && handleSend()}
           disabled={isLoading}
-          className="flex-1 bg-slate-800/90 border border-slate-700 rounded-xl px-4 py-3 text-sm text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-emerald-500 shadow-md"
+          className="flex-1 bg-white border border-slate-300 rounded-xl px-4 py-3 text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-600 shadow-xs font-medium"
         />
         <button
           onClick={() => handleSend()}
           disabled={isLoading || !inputQuery.trim()}
-          className="px-5 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-sm shadow-md transition-colors disabled:opacity-50 flex items-center gap-1.5"
+          className="px-5 py-3 rounded-xl bg-red-600 hover:bg-red-700 text-white font-extrabold text-sm shadow-md transition-colors disabled:opacity-50 flex items-center gap-1.5"
         >
           <Send className="w-4 h-4" />
           <span className="hidden sm:inline">Ask</span>

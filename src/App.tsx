@@ -112,7 +112,7 @@ export default function App() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans selection:bg-emerald-500 selection:text-slate-950">
+    <div className="min-h-screen bg-slate-100 text-slate-900 flex flex-col font-sans selection:bg-blue-600 selection:text-white">
       {/* Top Header */}
       <Header
         activeTab={activeTab}
@@ -127,11 +127,14 @@ export default function App() {
       <main className="flex-1 w-full max-w-7xl mx-auto px-4 sm:px-6 py-6">
         {/* Mobile View Container Simulation */}
         {isMobileView ? (
-          <div className="max-w-md mx-auto bg-slate-900 border-2 border-slate-700/80 rounded-3xl overflow-hidden shadow-2xl pb-20 relative min-h-[780px]">
+          <div className="max-w-md mx-auto bg-white border-2 border-slate-300 rounded-3xl overflow-hidden shadow-2xl pb-20 relative min-h-[780px]">
             {/* Mobile Top Bar */}
-            <div className="bg-slate-800/90 px-4 py-2.5 border-b border-slate-700/60 flex items-center justify-between">
-              <span className="text-xs font-bold text-slate-300">FanFlow Mobile</span>
-              <span className="text-[10px] font-semibold text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/20">
+            <div className="bg-slate-50 px-4 py-2.5 border-b border-slate-200 flex items-center justify-between">
+              <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                <span className="w-2 h-2 rounded-full bg-red-600"></span>
+                FanFlow Mobile
+              </span>
+              <span className="text-[10px] font-semibold text-blue-700 bg-blue-50 px-2 py-0.5 rounded-full border border-blue-200">
                 SGT UTC+8
               </span>
             </div>
@@ -181,44 +184,44 @@ export default function App() {
             </div>
 
             {/* Mobile Bottom Navigation Bar */}
-            <div className="absolute bottom-0 left-0 right-0 bg-slate-900/95 backdrop-blur border-t border-slate-800 px-2 py-2 flex items-center justify-around z-30">
+            <div className="absolute bottom-0 left-0 right-0 bg-white/95 backdrop-blur border-t border-slate-200 px-2 py-2 flex items-center justify-around z-30 shadow-lg">
               <button
                 onClick={() => setActiveTab('planner')}
                 className={`flex flex-col items-center gap-1 py-1 px-3 rounded-xl text-[11px] font-bold transition-colors ${
-                  activeTab === 'planner' ? 'text-emerald-400 bg-emerald-500/10' : 'text-slate-400 hover:text-slate-200'
+                  activeTab === 'planner' ? 'text-blue-700 bg-blue-50 border border-blue-200' : 'text-slate-500 hover:text-slate-800'
                 }`}
               >
-                <Calendar className="w-4 h-4" />
+                <Calendar className="w-4 h-4 text-blue-600" />
                 <span>Planner</span>
               </button>
 
               <button
                 onClick={() => setActiveTab('posters')}
                 className={`flex flex-col items-center gap-1 py-1 px-3 rounded-xl text-[11px] font-bold transition-colors ${
-                  activeTab === 'posters' ? 'text-emerald-400 bg-emerald-500/10' : 'text-slate-400 hover:text-slate-200'
+                  activeTab === 'posters' ? 'text-red-700 bg-red-50 border border-red-200' : 'text-slate-500 hover:text-slate-800'
                 }`}
               >
-                <ImageIcon className="w-4 h-4" />
+                <ImageIcon className="w-4 h-4 text-red-600" />
                 <span>Posters</span>
               </button>
 
               <button
                 onClick={() => setActiveTab('venue-data')}
                 className={`flex flex-col items-center gap-1 py-1 px-3 rounded-xl text-[11px] font-bold transition-colors ${
-                  activeTab === 'venue-data' ? 'text-emerald-400 bg-emerald-500/10' : 'text-slate-400 hover:text-slate-200'
+                  activeTab === 'venue-data' ? 'text-amber-700 bg-amber-50 border border-amber-300' : 'text-slate-500 hover:text-slate-800'
                 }`}
               >
-                <Building2 className="w-4 h-4" />
+                <Building2 className="w-4 h-4 text-amber-600" />
                 <span>Venues</span>
               </button>
 
               <button
                 onClick={() => setActiveTab('assistant')}
                 className={`flex flex-col items-center gap-1 py-1 px-3 rounded-xl text-[11px] font-bold transition-colors ${
-                  activeTab === 'assistant' ? 'text-emerald-400 bg-emerald-500/10' : 'text-slate-400 hover:text-slate-200'
+                  activeTab === 'assistant' ? 'text-blue-700 bg-blue-50 border border-blue-200' : 'text-slate-500 hover:text-slate-800'
                 }`}
               >
-                <Bot className="w-4 h-4" />
+                <Bot className="w-4 h-4 text-blue-600" />
                 <span>Assistant</span>
               </button>
             </div>

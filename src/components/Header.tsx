@@ -23,35 +23,36 @@ export const Header: React.FC<HeaderProps> = ({
   const getHealthBadge = () => {
     const fb = apiHealth?.footballData?.status;
     if (fb === 'online') {
-      return { text: 'APIs Live', color: 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30' };
+      return { text: 'APIs Live', color: 'bg-blue-50 text-blue-700 border-blue-300' };
     }
     if (fb === 'auth_failed' || fb === 'missing_token') {
-      return { text: 'Simulated Data', color: 'bg-amber-500/20 text-amber-300 border-amber-500/30' };
+      return { text: 'Simulated Data', color: 'bg-amber-50 text-amber-800 border-amber-300' };
     }
-    return { text: 'APIs Offline', color: 'bg-slate-700/60 text-slate-300 border-slate-600' };
+    return { text: 'APIs Offline', color: 'bg-slate-100 text-slate-700 border-slate-300' };
   };
 
   const healthBadge = getHealthBadge();
 
   return (
-    <header className="border-b border-slate-800 bg-slate-900/95 backdrop-blur sticky top-0 z-40">
+    <header className="border-b border-slate-200 bg-white/95 backdrop-blur sticky top-0 z-40 shadow-xs">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 py-3.5">
         <div className="flex items-center justify-between gap-4">
           {/* Logo & Title */}
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-emerald-500 to-teal-700 flex items-center justify-center shadow-lg shadow-emerald-500/20 ring-1 ring-emerald-400/30">
-              <span className="text-xl font-black text-white tracking-tighter">FF</span>
+            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-700 via-blue-600 to-red-600 flex items-center justify-center shadow-md ring-2 ring-amber-400">
+              <span className="text-xl font-black text-amber-300 tracking-tighter drop-shadow-xs">FF</span>
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <h1 className="text-xl sm:text-2xl font-black tracking-tight text-white">
-                  FanFlow
+                <h1 className="text-xl sm:text-2xl font-black tracking-tight text-slate-900 flex items-center gap-1.5">
+                  <span>FanFlow</span>
+                  <span className="w-2 h-2 rounded-full bg-red-600 inline-block"></span>
                 </h1>
-                <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-blue-50 text-blue-800 border border-blue-200">
                   Singapore SGT (UTC+8)
                 </span>
               </div>
-              <p className="text-xs text-slate-400 hidden sm:block">
+              <p className="text-xs text-slate-500 hidden sm:block">
                 European Football Match Planner & Playbook for SG Bars & Cafes
               </p>
             </div>
@@ -62,27 +63,27 @@ export const Header: React.FC<HeaderProps> = ({
             {/* API Health Pill */}
             <button
               onClick={onOpenHealth}
-              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border transition-colors hover:brightness-110 ${healthBadge.color}`}
+              className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold border transition-colors hover:brightness-95 ${healthBadge.color}`}
               title="Click to check data source connection status"
             >
-              <Activity className="w-3.5 h-3.5 animate-pulse" />
+              <Activity className="w-3.5 h-3.5 text-blue-600 animate-pulse" />
               <span className="hidden xs:inline">{healthBadge.text}</span>
             </button>
 
             {/* Web / Mobile Mode Toggle */}
             <button
               onClick={() => setIsMobileView(!isMobileView)}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs font-medium text-slate-200 transition-colors shadow-sm"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white hover:bg-slate-50 border border-slate-300 text-xs font-semibold text-slate-700 transition-colors shadow-xs"
               title={isMobileView ? 'Switch to Full Web View' : 'Switch to Mobile App View'}
             >
               {isMobileView ? (
                 <>
-                  <Monitor className="w-3.5 h-3.5 text-emerald-400" />
+                  <Monitor className="w-3.5 h-3.5 text-blue-600" />
                   <span className="hidden sm:inline">Web View</span>
                 </>
               ) : (
                 <>
-                  <Smartphone className="w-3.5 h-3.5 text-emerald-400" />
+                  <Smartphone className="w-3.5 h-3.5 text-blue-600" />
                   <span className="hidden sm:inline">Mobile View</span>
                 </>
               )}
@@ -91,22 +92,22 @@ export const Header: React.FC<HeaderProps> = ({
         </div>
 
         {/* Collapsible: "Who is this for?" toggle */}
-        <div className="mt-2.5 pt-2 border-t border-slate-800/80">
+        <div className="mt-2.5 pt-2 border-t border-slate-200">
           <button
             onClick={() => setWhoIsThisForExpanded(!whoIsThisForExpanded)}
-            className="flex items-center gap-1.5 text-xs text-slate-400 hover:text-emerald-400 transition-colors group cursor-pointer"
+            className="flex items-center gap-1.5 text-xs text-slate-600 hover:text-blue-700 transition-colors group cursor-pointer"
           >
-            <Info className="w-3.5 h-3.5 text-slate-500 group-hover:text-emerald-400" />
-            <span className="font-medium">Who is this for?</span>
+            <Info className="w-3.5 h-3.5 text-blue-600 group-hover:text-blue-700" />
+            <span className="font-semibold text-slate-700">Who is this for?</span>
             {whoIsThisForExpanded ? (
-              <ChevronUp className="w-3.5 h-3.5 transition-transform" />
+              <ChevronUp className="w-3.5 h-3.5 transition-transform text-slate-500" />
             ) : (
-              <ChevronDown className="w-3.5 h-3.5 transition-transform" />
+              <ChevronDown className="w-3.5 h-3.5 transition-transform text-slate-500" />
             )}
           </button>
 
           {whoIsThisForExpanded && (
-            <div className="mt-1.5 py-2 px-3 bg-slate-800/60 rounded-lg border border-slate-700/60 text-xs text-slate-300 animate-fadeIn">
+            <div className="mt-1.5 py-2 px-3.5 bg-blue-50/80 rounded-xl border border-blue-200 text-xs text-blue-950 font-medium animate-fadeIn">
               For sports bar and café owners in Singapore who need to know which late-night European matches to screen, and how to staff and stock for them.
             </div>
           )}
@@ -114,56 +115,59 @@ export const Header: React.FC<HeaderProps> = ({
 
         {/* Desktop Tab Navigation (when not in mobile container view) */}
         {!isMobileView && (
-          <nav className="mt-3 flex items-center space-x-1 border-b border-slate-800 -mb-3.5">
+          <nav className="mt-3 flex items-center space-x-2 border-b border-slate-200 -mb-3.5">
             <button
               onClick={() => setActiveTab('planner')}
-              className={`px-4 py-2.5 text-sm font-semibold border-b-2 transition-colors flex items-center gap-2 ${
+              className={`px-4 py-2.5 text-sm font-bold border-b-2 transition-colors flex items-center gap-2 ${
                 activeTab === 'planner'
-                  ? 'border-emerald-500 text-emerald-400 bg-emerald-500/5'
-                  : 'border-transparent text-slate-400 hover:text-slate-200 hover:border-slate-700'
+                  ? 'border-blue-600 text-blue-700 bg-blue-50/60'
+                  : 'border-transparent text-slate-600 hover:text-blue-700 hover:border-slate-300'
               }`}
             >
-              1. Planner
-              <span className="text-[10px] uppercase font-bold px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300">
+              <span>1. Planner</span>
+              <span className="text-[10px] uppercase font-extrabold px-1.5 py-0.5 rounded bg-amber-400 text-slate-950 shadow-xs">
                 Core
               </span>
             </button>
 
             <button
               onClick={() => setActiveTab('posters')}
-              className={`px-4 py-2.5 text-sm font-semibold border-b-2 transition-colors flex items-center gap-2 ${
+              className={`px-4 py-2.5 text-sm font-bold border-b-2 transition-colors flex items-center gap-2 ${
                 activeTab === 'posters'
-                  ? 'border-emerald-500 text-emerald-400 bg-emerald-500/5'
-                  : 'border-transparent text-slate-400 hover:text-slate-200 hover:border-slate-700'
+                  ? 'border-red-600 text-red-700 bg-red-50/60'
+                  : 'border-transparent text-slate-600 hover:text-red-700 hover:border-slate-300'
               }`}
             >
-              2. Posters
+              <span>2. Posters</span>
+              <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-red-100 text-red-700">
+                Promo
+              </span>
             </button>
 
             <button
               onClick={() => setActiveTab('venue-data')}
-              className={`px-4 py-2.5 text-sm font-semibold border-b-2 transition-colors flex items-center gap-2 ${
+              className={`px-4 py-2.5 text-sm font-bold border-b-2 transition-colors flex items-center gap-2 ${
                 activeTab === 'venue-data'
-                  ? 'border-emerald-500 text-emerald-400 bg-emerald-500/5'
-                  : 'border-transparent text-slate-400 hover:text-slate-200 hover:border-slate-700'
+                  ? 'border-amber-500 text-amber-900 bg-amber-50/60'
+                  : 'border-transparent text-slate-600 hover:text-amber-800 hover:border-slate-300'
               }`}
             >
-              3. Venue Data
-              <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-400 border border-slate-700">
+              <span>3. Venue Data</span>
+              <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-100 text-slate-700 border border-slate-300 font-semibold">
                 DB-01 to 05
               </span>
             </button>
 
             <button
               onClick={() => setActiveTab('assistant')}
-              className={`px-4 py-2.5 text-sm font-semibold border-b-2 transition-colors flex items-center gap-2 ${
+              className={`px-4 py-2.5 text-sm font-bold border-b-2 transition-colors flex items-center gap-2 ${
                 activeTab === 'assistant'
-                  ? 'border-emerald-500 text-emerald-400 bg-emerald-500/5'
-                  : 'border-transparent text-slate-400 hover:text-slate-200 hover:border-slate-700'
+                  ? 'border-blue-600 text-blue-700 bg-blue-50/60'
+                  : 'border-transparent text-slate-600 hover:text-blue-700 hover:border-slate-300'
               }`}
             >
-              4. Assistant
-              <span className="text-[10px] uppercase font-bold px-1.5 py-0.5 rounded bg-teal-500/20 text-teal-300 border border-teal-500/30">
+              <span>4. Assistant</span>
+              <span className="text-[10px] uppercase font-extrabold px-1.5 py-0.5 rounded bg-blue-100 text-blue-700 border border-blue-200">
                 Bonus RAG
               </span>
             </button>
