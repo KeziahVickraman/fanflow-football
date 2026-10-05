@@ -8,15 +8,9 @@
 
 import fs from 'fs';
 import path from 'path';
+import { KNOWLEDGE_CHUNKS, type KnowledgeChunk } from '../data/knowledgeChunks.ts';
 
-export interface KnowledgeChunk {
-  id: string;
-  heading: string;
-  section: string;
-  content: string;
-  source: 'simulated' | 'API';
-  lastUpdated: string;
-}
+export { type KnowledgeChunk };
 
 let cachedChunks: KnowledgeChunk[] | null = null;
 
@@ -28,10 +22,16 @@ export function loadKnowledgeChunks(): KnowledgeChunk[] {
   const knowledgePath = path.resolve(process.cwd(), 'knowledge.md');
   let rawText = '';
   try {
-    rawText = fs.readFileSync(knowledgePath, 'utf-8');
+    if (fs.existsSync(knowledgePath)) {
+      rawText = fs.readFileSync(knowledgePath, 'utf-8');
+    }
   } catch (err) {
-    console.error('Could not read knowledge.md from disk:', err);
-    return [];
+    console.warn('Could not read knowledge.md from disk, falling back to embedded KNOWLEDGE_CHUNKS:', err);
+  }
+
+  if (!rawText) {
+    cachedChunks = KNOWLEDGE_CHUNKS;
+    return KNOWLEDGE_CHUNKS;
   }
 
   const lines = rawText.split('\n');

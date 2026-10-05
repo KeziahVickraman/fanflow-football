@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
-import { Send, Bot, User, ChevronDown, ChevronUp, Sparkles, BookOpen, AlertCircle, AlertTriangle, FileQuestion } from 'lucide-react';
+import { Send, Bot, User, ChevronDown, ChevronUp, Sparkles, BookOpen, AlertTriangle, FileQuestion } from 'lucide-react';
 import type { Venue } from '../data/simulatedDb.ts';
 import type { MatchFixture } from '../shared/scoringEngine.ts';
+import { KNOWLEDGE_CHUNKS, type KnowledgeChunk } from '../data/knowledgeChunks.ts';
 
 interface AssistantTabProps {
   selectedVenue: Venue;
@@ -12,12 +13,7 @@ interface Message {
   id: string;
   sender: 'user' | 'assistant';
   text: string;
-  sources?: Array<{
-    id: string;
-    heading: string;
-    section: string;
-    content: string;
-  }>;
+  sources?: KnowledgeChunk[];
   geminiOnline?: boolean;
   geminiError?: string;
   kbLoaded?: boolean;
@@ -30,6 +26,49 @@ const SAMPLE_QUESTIONS = [
   'What is FanFlow\'s cancellation and refund policy?',
   'What competitions are included in the Starter plan?',
 ];
+
+/**
+ * Client-side keyword retrieval using embedded knowledge chunks
+ * Guarantees Sources and closest chunk are always available even if backend 404s
+ */
+function retrieveChunksClient(query: string, topK: number = 4): KnowledgeChunk[] {
+  if (!KNOWLEDGE_CHUNKS || KNOWLEDGE_CHUNKS.length === 0) return [];
+
+  const stopWords = new Set([
+    'a', 'an', 'and', 'are', 'as', 'at', 'be', 'by', 'for', 'from', 'has', 'he',
+    'in', 'is', 'it', 'its', 'of', 'on', 'that', 'the', 'to', 'was', 'were',
+    'will', 'with', 'what', 'which', 'how', 'who', 'why', 'where', 'when', 'does', 'do'
+  ]);
+
+  const queryTokens = query
+    .toLowerCase()
+    .replace(/[^a-z0-9\s-]/g, ' ')
+    .split(/\s+/)
+    .filter(t => t.length > 2 && !stopWords.has(t));
+
+  if (queryTokens.length === 0) {
+    return KNOWLEDGE_CHUNKS.slice(0, topK);
+  }
+
+  const scored = KNOWLEDGE_CHUNKS.map(chunk => {
+    const textToMatch = `${chunk.id} ${chunk.heading} ${chunk.content}`.toLowerCase();
+    let score = 0;
+
+    for (const token of queryTokens) {
+      if (chunk.id.toLowerCase().includes(token)) score += 30;
+      if (chunk.heading.toLowerCase().includes(token)) score += 10;
+      const regex = new RegExp(`\\b${token}\\b`, 'g');
+      const matches = textToMatch.match(regex);
+      if (matches) score += matches.length * 2;
+      else if (textToMatch.includes(token)) score += 1;
+    }
+
+    return { chunk, score };
+  });
+
+  scored.sort((a, b) => b.score - a.score);
+  return scored.slice(0, topK).map(s => s.chunk);
+}
 
 export const AssistantTab: React.FC<AssistantTabProps> = ({
   selectedVenue,
@@ -66,50 +105,93 @@ export const AssistantTab: React.FC<AssistantTabProps> = ({
     setInputQuery('');
     setIsLoading(true);
 
+    // Retrieve client-side top 4 chunks immediately so sources are guaranteed
+    const clientRetrievedChunks = retrieveChunksClient(q, 4);
+    const closestChunk = clientRetrievedChunks[0];
+    const directFallbackAnswer = closestChunk
+      ? `Direct from knowledge base (AI summary unavailable):\n\n${closestChunk.content.replace(/^###?\s+.*?\n+/, '').trim()}`
+      : 'Knowledge base not loaded';
+
     try {
-      // Call server route /api/assistant only
+      // Call server route /api/assistant with { question, chunks }
       const res = await fetch('/api/assistant', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           question: q,
+          chunks: clientRetrievedChunks,
           currentVenue: selectedVenue,
-          plannerContext: {
-            fixtureCount: fixtures.length,
-            sampleMatches: fixtures.slice(0, 3).map(f => `${f.homeTeam.name} vs ${f.awayTeam.name}`),
-          },
         }),
       });
 
+      // Check response Content-Type BEFORE calling res.json()
+      const contentType = res.headers.get('content-type') || '';
+
+      if (!contentType.includes('application/json')) {
+        // Non-JSON response (e.g. Vercel 404 HTML page)
+        const status = res.status;
+        const routeNotFoundMsg = `Assistant route not found (HTTP ${status}). Redeploy and check /api/assistant exists.`;
+
+        const assistantMsg: Message = {
+          id: `a-${Date.now()}`,
+          sender: 'assistant',
+          text: directFallbackAnswer,
+          sources: clientRetrievedChunks,
+          geminiOnline: false,
+          geminiError: routeNotFoundMsg,
+          kbLoaded: clientRetrievedChunks.length > 0,
+        };
+
+        setMessages(prev => [...prev, assistantMsg]);
+        setExpandedSources(prev => ({ ...prev, [assistantMsg.id]: true }));
+        return;
+      }
+
+      // Parse JSON response
       const data = await res.json();
 
-      const assistantMsg: Message = {
-        id: `a-${Date.now()}`,
-        sender: 'assistant',
-        text: data.answer || "I don't have that information.",
-        sources: data.sources || [],
-        geminiOnline: data.geminiOnline !== false,
-        geminiError: data.geminiError,
-        kbLoaded: data.kbLoaded !== false,
-      };
+      if (data.ok) {
+        // Successful response from Gemini: { ok: true, answer, citedIds }
+        const assistantMsg: Message = {
+          id: `a-${Date.now()}`,
+          sender: 'assistant',
+          text: data.answer || "I don't have that information.",
+          sources: clientRetrievedChunks,
+          geminiOnline: true,
+          kbLoaded: true,
+        };
 
-      setMessages(prev => [...prev, assistantMsg]);
+        setMessages(prev => [...prev, assistantMsg]);
+        setExpandedSources(prev => ({ ...prev, [assistantMsg.id]: true }));
+      } else {
+        // Error response in JSON format: { ok: false, errorType, message, status }
+        const isKbError = data.errorType === 'kb_not_loaded';
+        const assistantMsg: Message = {
+          id: `a-${Date.now()}`,
+          sender: 'assistant',
+          text: isKbError ? 'Knowledge base not loaded' : directFallbackAnswer,
+          sources: clientRetrievedChunks,
+          geminiOnline: false,
+          geminiError: data.message || 'Gemini service error.',
+          kbLoaded: !isKbError,
+        };
 
-      // Auto-expand sources by default so user always sees the grounding
-      if (data.sources && data.sources.length > 0) {
+        setMessages(prev => [...prev, assistantMsg]);
         setExpandedSources(prev => ({ ...prev, [assistantMsg.id]: true }));
       }
     } catch (err: any) {
-      console.error('Error calling /api/assistant:', err);
-      const errorMsg: Message = {
+      console.error('Network error calling /api/assistant:', err);
+      const assistantMsg: Message = {
         id: `a-${Date.now()}`,
         sender: 'assistant',
-        text: 'Network error communicating with /api/assistant. Check server connection.',
+        text: directFallbackAnswer,
+        sources: clientRetrievedChunks,
         geminiOnline: false,
-        geminiError: err.message,
-        kbLoaded: true,
+        geminiError: `Network request error: ${err.message}`,
+        kbLoaded: clientRetrievedChunks.length > 0,
       };
-      setMessages(prev => [...prev, errorMsg]);
+      setMessages(prev => [...prev, assistantMsg]);
+      setExpandedSources(prev => ({ ...prev, [assistantMsg.id]: true }));
     } finally {
       setIsLoading(false);
     }
@@ -127,7 +209,7 @@ export const AssistantTab: React.FC<AssistantTabProps> = ({
             <div className="flex items-center gap-2">
               <h2 className="text-base font-extrabold text-slate-900">FanFlow Assistant</h2>
               <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-full bg-blue-100 text-blue-800 border border-blue-200">
-                Server-side /api/assistant
+                Server route /api/assistant
               </span>
             </div>
             <p className="text-xs text-slate-500 mt-0.5 font-medium">
@@ -190,11 +272,11 @@ export const AssistantTab: React.FC<AssistantTabProps> = ({
                   <span>Knowledge base not loaded</span>
                 </div>
               ) : !msg.geminiOnline && msg.geminiError ? (
-                // 2. Real Gemini Error Message
+                // 2. Real Gemini / Route Error Message
                 <div className="mt-3 p-3 rounded-xl bg-amber-50 border border-amber-300 text-amber-950 text-xs flex items-start gap-2 font-semibold">
                   <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
                   <div>
-                    <span className="font-extrabold block text-amber-900">Gemini Status Notice:</span>
+                    <span className="font-extrabold block text-amber-900">Service Status Notice:</span>
                     <span>{msg.geminiError}</span>
                   </div>
                 </div>
@@ -256,7 +338,7 @@ export const AssistantTab: React.FC<AssistantTabProps> = ({
             </div>
             <div className="bg-white border border-slate-200 rounded-2xl rounded-tl-none p-3.5 text-xs text-slate-600 flex items-center gap-2 shadow-2xs font-medium">
               <span className="w-2 h-2 rounded-full bg-blue-600 animate-ping"></span>
-              Retrieving top 4 chunks & querying Gemini...
+              Querying /api/assistant & retrieving knowledge chunks...
             </div>
           </div>
         )}

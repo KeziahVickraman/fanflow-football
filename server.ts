@@ -584,6 +584,10 @@ User Question:
   });
 }
 
+app.get('/api/assistant', (_req, res) => {
+  res.setHeader('Content-Type', 'application/json');
+  res.json({ ok: true, route: 'assistant' });
+});
 app.post('/api/assistant', handleAssistantRequest);
 // Maintain /api/chat alias for compatibility
 app.post('/api/chat', handleAssistantRequest);
