@@ -33,6 +33,34 @@ export const Header: React.FC<HeaderProps> = ({
 
   const healthBadge = getHealthBadge();
 
+  const getHeaderDot = () => {
+    const fbOnline = apiHealth?.footballData?.status === 'online';
+    const geminiOnline = apiHealth?.gemini?.status === 'online';
+
+    // Green if all online, amber if only Gemini is down, red if football-data.org is down
+    if (!fbOnline) {
+      return {
+        color: 'bg-red-600',
+        ring: 'ring-red-300',
+        tooltip: 'football-data.org is down (Red)',
+      };
+    }
+    if (!geminiOnline) {
+      return {
+        color: 'bg-amber-500',
+        ring: 'ring-amber-300',
+        tooltip: 'football-data.org is online, only Gemini is down (Amber)',
+      };
+    }
+    return {
+      color: 'bg-emerald-500',
+      ring: 'ring-emerald-300',
+      tooltip: 'All systems online: football-data.org & Gemini (Green)',
+    };
+  };
+
+  const statusDot = getHeaderDot();
+
   return (
     <header className="border-b border-slate-200 bg-white/95 backdrop-blur sticky top-0 z-40 shadow-xs">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 py-3.5">
@@ -44,9 +72,12 @@ export const Header: React.FC<HeaderProps> = ({
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <h1 className="text-xl sm:text-2xl font-black tracking-tight text-slate-900 flex items-center gap-1.5">
+                <h1 className="text-xl sm:text-2xl font-black tracking-tight text-slate-900 flex items-center gap-2">
                   <span>FanFlow</span>
-                  <span className="w-2 h-2 rounded-full bg-red-600 inline-block"></span>
+                  <span
+                    className={`w-2.5 h-2.5 rounded-full ${statusDot.color} ring-2 ${statusDot.ring} inline-block animate-pulse`}
+                    title={statusDot.tooltip}
+                  ></span>
                 </h1>
                 <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-blue-50 text-blue-800 border border-blue-200">
                   Singapore SGT (UTC+8)

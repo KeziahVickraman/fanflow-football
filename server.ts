@@ -2,8 +2,8 @@
  * FanFlow Backend Express Server
  * Handles football-data.org v4 proxy with sequential fetching & 10-min caching
  * Handles TheSportsDB v1 lookup with 7-day caching
- * Handles /api/health check without exposing secrets
- * Handles Gemini RAG assistant via @google/genai using knowledge.md chunks
+ * Handles /api/health check with real Gemini test call & knowledgeBase count
+ * Handles /api/assistant RAG route using GEMINI_MODEL with auto-retry and specific error handling
  */
 
 import express from 'express';
@@ -11,8 +11,9 @@ import { createServer as createViteServer } from 'vite';
 import dotenv from 'dotenv';
 import path from 'path';
 import { GoogleGenAI } from '@google/genai';
-import { retrieveTopChunks } from './src/server/knowledgeRag.ts';
+import { retrieveTopChunks, loadKnowledgeChunks } from './src/server/knowledgeRag.ts';
 import { FALLBACK_FIXTURES, FALLBACK_STANDINGS } from './src/data/fallbackFixtures.ts';
+import { GEMINI_MODEL } from './src/config/geminiConfig.ts';
 
 dotenv.config();
 
@@ -33,15 +34,99 @@ const FIXTURE_CACHE_TTL = 10 * 60 * 1000; // 10 minutes
 const teamCache = new Map<string, CacheEntry<any>>();
 const TEAM_CACHE_TTL = 7 * 24 * 60 * 60 * 1000; // 7 days
 
-// Helper for delay in sequential fetching
+// Cache for tiny Gemini health check ping to avoid burning rate limits
+let cachedGeminiHealth: CacheEntry<any> | null = null;
+const HEALTH_CACHE_TTL = 30 * 1000; // 30 seconds
+
+// Helper for delay
 const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
+/**
+ * Parses Gemini SDK and API errors into user-friendly status and message
+ * Never exposes the API key or raw credentials.
+ */
+function parseGeminiError(err: any): {
+  status: 'online' | 'missing_key' | 'auth_failed' | 'rate_limited' | 'model_error' | 'service_error';
+  code?: number;
+  message: string;
+} {
+  const errStr = typeof err === 'string' ? err : err?.message || JSON.stringify(err);
+
+  // Extract HTTP status code if present
+  let code = err?.status || err?.code || err?.statusCode;
+  if (!code) {
+    const codeMatch = errStr.match(/\b(400|401|403|404|429|500|503)\b/);
+    if (codeMatch) code = parseInt(codeMatch[1], 10);
+  }
+
+  // 1. Auth failed (401 or 403)
+  if (
+    code === 401 ||
+    code === 403 ||
+    errStr.includes('API_KEY_INVALID') ||
+    errStr.includes('PERMISSION_DENIED') ||
+    errStr.includes('unauthorized')
+  ) {
+    return {
+      status: 'auth_failed',
+      code: code || 401,
+      message: 'Gemini key rejected: check the key.',
+    };
+  }
+
+  // 2. Rate limit / Quota exceeded (429)
+  if (
+    code === 429 ||
+    errStr.includes('RESOURCE_EXHAUSTED') ||
+    errStr.includes('quota') ||
+    errStr.includes('rate-limit') ||
+    errStr.includes('rate limit')
+  ) {
+    return {
+      status: 'rate_limited',
+      code: 429,
+      message: 'Rate limit reached: wait a minute and try again.',
+    };
+  }
+
+  // 3. Bad request / Invalid model (400)
+  if (code === 400 || errStr.includes('INVALID_ARGUMENT') || errStr.includes('models/')) {
+    let cleanMsg = err?.message || 'Invalid request';
+    try {
+      const parsed = JSON.parse(err.message);
+      if (parsed?.error?.message) cleanMsg = parsed.error.message;
+    } catch {}
+    cleanMsg = cleanMsg.replace(/AIza[0-9A-Za-z-_]{35}/g, '[REDACTED]');
+    return {
+      status: 'model_error',
+      code: 400,
+      message: `Invalid request or model name: ${cleanMsg}`,
+    };
+  }
+
+  // 4. General fallback
+  const safeMessage = err?.message
+    ? err.message.replace(/AIza[0-9A-Za-z-_]{35}/g, '[REDACTED]')
+    : 'Gemini service error';
+
+  return {
+    status: 'service_error',
+    code,
+    message: safeMessage,
+  };
+}
 
 // ==========================================
 // 1. Health check endpoint: /api/health
 // ==========================================
 app.get('/api/health', async (_req, res) => {
+  // Check football-data.org
   const token = process.env.FOOTBALL_DATA_TOKEN;
-  let footballDataStatus: { status: 'online' | 'auth_failed' | 'missing_token' | 'error'; code?: number; message: string };
+  let footballDataStatus: {
+    status: 'online' | 'auth_failed' | 'missing_token' | 'error';
+    code?: number;
+    message: string;
+  };
 
   if (!token) {
     footballDataStatus = {
@@ -59,7 +144,7 @@ app.get('/api/health', async (_req, res) => {
         footballDataStatus = {
           status: 'auth_failed',
           code: 403,
-          message: 'Token is missing or wrong (403). Note: 403 indicates invalid authentication, not a paywall.',
+          message: 'football-data.org token is missing or wrong (403). Note: 403 indicates invalid authentication, not a paywall.',
         };
       } else {
         footballDataStatus = {
@@ -89,19 +174,62 @@ app.get('/api/health', async (_req, res) => {
     sportsDbStatus = { status: 'error', message: `TheSportsDB network error: ${err.message || 'Unknown error'}` };
   }
 
-  // Check Gemini
-  const geminiConfigured = Boolean(process.env.GEMINI_API_KEY);
-  const geminiStatus = {
-    status: geminiConfigured ? 'configured' : 'missing',
-    message: geminiConfigured
-      ? 'Gemini API key configured for RAG assistant'
-      : 'GEMINI_API_KEY missing from secrets. Assistant tab will show friendly offline banner.',
+  // Check Gemini with a tiny real test call ("Reply OK")
+  let geminiStatus: {
+    status: 'online' | 'missing_key' | 'auth_failed' | 'rate_limited' | 'model_error' | 'service_error';
+    code?: number;
+    message: string;
+  };
+
+  if (!process.env.GEMINI_API_KEY) {
+    geminiStatus = {
+      status: 'missing_key',
+      message: 'Gemini key missing: add GEMINI_API_KEY in Vercel and redeploy.',
+    };
+  } else if (cachedGeminiHealth && (Date.now() - cachedGeminiHealth.timestamp < HEALTH_CACHE_TTL)) {
+    geminiStatus = cachedGeminiHealth.data;
+  } else {
+    try {
+      const testAi = new GoogleGenAI({
+        apiKey: process.env.GEMINI_API_KEY,
+        httpOptions: {
+          headers: {
+            'User-Agent': 'aistudio-build',
+          },
+        },
+      });
+
+      await testAi.models.generateContent({
+        model: GEMINI_MODEL,
+        contents: 'Reply OK',
+      });
+
+      geminiStatus = {
+        status: 'online',
+        code: 200,
+        message: `Gemini is online and responding (${GEMINI_MODEL}).`,
+      };
+    } catch (err: any) {
+      geminiStatus = parseGeminiError(err);
+    }
+    cachedGeminiHealth = { data: geminiStatus, timestamp: Date.now() };
+  }
+
+  // Check Knowledge Base
+  const allChunks = loadKnowledgeChunks();
+  const knowledgeBaseStatus = {
+    status: allChunks.length > 0 ? 'loaded' : 'not_loaded',
+    chunkCount: allChunks.length,
+    message: allChunks.length > 0
+      ? `${allChunks.length} chunks loaded from knowledge.md`
+      : 'Knowledge base not loaded',
   };
 
   res.json({
     footballData: footballDataStatus,
     sportsDb: sportsDbStatus,
     gemini: geminiStatus,
+    knowledgeBase: knowledgeBaseStatus,
     timestamp: new Date().toISOString(),
   });
 });
@@ -122,7 +250,6 @@ app.get('/api/sportsdb/team', async (req, res) => {
   }
 
   try {
-    // 1. Search by exact team name to obtain idTeam
     const searchUrl = `https://www.thesportsdb.com/api/v1/json/123/searchteams.php?t=${encodeURIComponent(teamName)}`;
     const searchRes = await fetch(searchUrl);
     if (!searchRes.ok) {
@@ -132,13 +259,11 @@ app.get('/api/sportsdb/team', async (req, res) => {
     const team = searchData?.teams?.[0];
 
     if (!team || !team.idTeam) {
-      // Fallback empty result cached for 1 hour
       const fallbackData = { teamName, badgeUrl: null, stadium: null, description: null };
       teamCache.set(cacheKey, { data: fallbackData, timestamp: Date.now() });
       return res.json(fallbackData);
     }
 
-    // 2. Fetch team details by idTeam (lookupteam.php?id={idTeam})
     const lookupUrl = `https://www.thesportsdb.com/api/v1/json/123/lookupteam.php?id=${team.idTeam}`;
     const lookupRes = await fetch(lookupUrl);
     let details = team;
@@ -149,7 +274,6 @@ app.get('/api/sportsdb/team', async (req, res) => {
       }
     }
 
-    // Badge priority: strBadge, fallback strTeamBadge
     const badgeUrl = details.strBadge || details.strTeamBadge || null;
     const result = {
       teamName,
@@ -159,7 +283,6 @@ app.get('/api/sportsdb/team', async (req, res) => {
       description: details.strDescriptionEN || null,
     };
 
-    // Cache for 7 days
     teamCache.set(cacheKey, { data: result, timestamp: Date.now() });
     res.json(result);
   } catch (err: any) {
@@ -176,7 +299,6 @@ app.get('/api/football/fixtures', async (req, res) => {
   const competitionsParam = (req.query.competitions as string) || 'PL,CL';
   const compList = competitionsParam.split(',').map(c => c.trim().toUpperCase()).filter(Boolean);
 
-  // Compute 7 days window (from today)
   const now = new Date();
   const dateFrom = now.toISOString().split('T')[0];
   const next7Days = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
@@ -188,7 +310,6 @@ app.get('/api/football/fixtures', async (req, res) => {
     return res.json({ ...cached.data, cached: true });
   }
 
-  // If no token, return fallback data cleanly with helpful message
   if (!token) {
     const filteredFallback = FALLBACK_FIXTURES.filter(f =>
       compList.includes(f.competition.code.toUpperCase())
@@ -208,7 +329,6 @@ app.get('/api/football/fixtures', async (req, res) => {
     return res.json(result);
   }
 
-  // Fetch competitions SEQUENTIALLY to respect free tier limit (10 requests/minute)
   try {
     const allMatches: any[] = [];
     const allStandings: Record<string, any[]> = {};
@@ -218,12 +338,10 @@ app.get('/api/football/fixtures', async (req, res) => {
     for (let i = 0; i < compList.length; i++) {
       const code = compList[i];
 
-      // Delay between sequential requests (e.g. 700ms) to ensure < 10 req/min
       if (i > 0) {
         await delay(700);
       }
 
-      // 1. Fetch fixtures
       const matchesUrl = `https://api.football-data.org/v4/competitions/${code}/matches?dateFrom=${dateFrom}&dateTo=${dateTo}`;
       const mRes = await fetch(matchesUrl, {
         headers: { 'X-Auth-Token': token },
@@ -242,10 +360,8 @@ app.get('/api/football/fixtures', async (req, res) => {
         }
       }
 
-      // Delay before standings request
       await delay(700);
 
-      // 2. Fetch standings
       const standingsUrl = `https://api.football-data.org/v4/competitions/${code}/standings`;
       const sRes = await fetch(standingsUrl, {
         headers: { 'X-Auth-Token': token },
@@ -265,7 +381,6 @@ app.get('/api/football/fixtures', async (req, res) => {
     }
 
     if (authFailed) {
-      // Clean fallback on 403
       const filteredFallback = FALLBACK_FIXTURES.filter(f =>
         compList.includes(f.competition.code.toUpperCase())
       );
@@ -282,7 +397,6 @@ app.get('/api/football/fixtures', async (req, res) => {
       return res.json(result);
     }
 
-    // Merge standings ranks into matches
     const formattedMatches = allMatches.map(m => {
       const compCode = m.competition?.code || '';
       const leagueStandings = allStandings[compCode] || [];
@@ -331,7 +445,6 @@ app.get('/api/football/fixtures', async (req, res) => {
     res.json(result);
   } catch (err: any) {
     console.error('Error fetching football fixtures:', err);
-    // Return fallback on any error
     const result = {
       source: 'simulated_fallback',
       message: `Failed to fetch live API data (${err.message}). Using simulated fixtures.`,
@@ -346,53 +459,54 @@ app.get('/api/football/fixtures', async (req, res) => {
 });
 
 // ==========================================
-// 4. Bonus RAG Assistant: /api/chat
+// 4. Assistant RAG Route: /api/assistant
 // ==========================================
-app.post('/api/chat', async (req, res) => {
+async function handleAssistantRequest(req: express.Request, res: express.Response) {
   const { question, currentVenue, plannerContext } = req.body;
 
   if (!question || typeof question !== 'string') {
     return res.status(400).json({ error: 'Question is required' });
   }
 
-  // Retrieve top 4 chunks from knowledge.md
-  const retrievedChunks = retrieveTopChunks(question, 4);
-
-  // If Gemini API Key is missing, return friendly response
-  if (!process.env.GEMINI_API_KEY) {
+  // Check Knowledge Base status
+  const allChunks = loadKnowledgeChunks();
+  if (allChunks.length === 0) {
     return res.json({
-      answer: "I don't have that information directly right now because the Gemini API key is not configured in Settings > Secrets. However, you can explore the relevant knowledge base sections below.",
-      sources: retrievedChunks,
-      geminiOffline: true,
+      answer: 'Knowledge base not loaded',
+      sources: [],
+      geminiOnline: false,
+      kbLoaded: false,
+      errorType: 'kb_not_loaded',
+      errorMessage: 'knowledge.md could not be read or contains 0 chunks.',
     });
   }
 
-  try {
-    const ai = new GoogleGenAI({
-      apiKey: process.env.GEMINI_API_KEY,
-      httpOptions: {
-        headers: {
-          'User-Agent': 'aistudio-build',
-        },
-      },
+  // Retrieve top 4 chunks
+  const retrievedChunks = retrieveTopChunks(question, 4);
+  const closestChunk = retrievedChunks[0] || allChunks[0];
+  const closestText = closestChunk.content.replace(/^###?\s+.*?\n+/, '').trim();
+  const directFallbackAnswer = `Direct from knowledge base (AI summary unavailable):\n\n${closestText}`;
+
+  // Check Gemini Key
+  if (!process.env.GEMINI_API_KEY) {
+    return res.json({
+      answer: directFallbackAnswer,
+      sources: retrievedChunks,
+      geminiOnline: false,
+      kbLoaded: true,
+      errorType: 'missing_key',
+      geminiError: 'Gemini key missing: add GEMINI_API_KEY in Vercel and redeploy.',
     });
+  }
 
-    // Format retrieved chunks with their IDs
-    const chunksText = retrievedChunks
-      .map(c => `[CHUNK: ${c.id}]\nHeading: ${c.heading}\nSection: ${c.section}\nContent:\n${c.content}`)
-      .join('\n\n---\n\n');
+  // Prepare Gemini Prompt
+  const chunksText = retrievedChunks
+    .map(c => `[CHUNK: ${c.id}]\nHeading: ${c.heading}\nSection: ${c.section}\nContent:\n${c.content}`)
+    .join('\n\n---\n\n');
 
-    const systemInstruction = `You are FanFlow Assistant, an intelligent operational advisor for sports bars and cafes in Singapore.
-Your goal is to answer questions about European football screening decisions, importance scores, staff planning, stock planning, pricing plans, and venue policies.
+  const systemInstruction = "Answer only from the provided chunks, cite chunk IDs like [FAQ-02], say 'I don't have that information' if the chunks don't cover it";
 
-CRITICAL RULES:
-1. Answers MUST come ONLY from the retrieved knowledge chunks and the live planner context provided below.
-2. You MUST cite the specific chunk IDs (e.g. [RULE-01], [RULE-03], [DB-02], [FAQ-05], [BMC-01]) for every fact or rule you use.
-3. If the answer cannot be found in the retrieved chunks or API context, you MUST strictly say: "I don't have that information in my knowledge base." Never invent prices, customers, matches, or policies.
-4. Keep answers concise, professional, and practical for bar and cafe operators in Singapore. Kickoff times must always be referred to in Singapore Time (SGT, UTC+8).
-5. Never label match scores as "live" (scores are delayed planning data).`;
-
-    const promptContent = `Retrieved Knowledge Chunks:
+  const promptContent = `Retrieved Knowledge Chunks:
 ${chunksText}
 
 Live Planner Context:
@@ -400,46 +514,79 @@ ${plannerContext ? JSON.stringify(plannerContext, null, 2) : 'No specific match 
 Current Selected Venue: ${currentVenue ? JSON.stringify(currentVenue) : 'Not specified'}
 
 User Question:
-"${question}"
+"${question}"`;
 
-Answer the question strictly based on the retrieved chunks above, citing the chunk IDs. If information is missing, state "I don't have that information".`;
+  const ai = new GoogleGenAI({
+    apiKey: process.env.GEMINI_API_KEY,
+    httpOptions: {
+      headers: {
+        'User-Agent': 'aistudio-build',
+      },
+    },
+  });
 
-    const geminiResponse = await ai.models.generateContent({
-      model: 'gemini-3.8-flash',
+  let geminiResponse: any = null;
+  let executionError: any = null;
+
+  try {
+    geminiResponse = await ai.models.generateContent({
+      model: GEMINI_MODEL,
       contents: promptContent,
       config: {
         systemInstruction,
-        temperature: 0.2, // low temperature for high fidelity to chunks
+        temperature: 0.2,
       },
     });
-
-    const answer = geminiResponse.text || "I don't have that information.";
-
-    res.json({
-      answer,
-      sources: retrievedChunks,
-      geminiOffline: false,
-    });
   } catch (err: any) {
-    console.error('Error generating Gemini response:', err);
+    executionError = err;
+    const parsed = parseGeminiError(err);
 
-    let fallbackAnswer = '';
-    if (retrievedChunks.length > 0) {
-      const primaryChunk = retrievedChunks[0];
-      const cleanContent = primaryChunk.content.replace(/^###?\s+.*?\n+/, '').trim();
-      fallbackAnswer = `Based on ${primaryChunk.id} (${primaryChunk.heading}):\n\n${cleanContent}\n\n[Notice: Gemini AI is currently rate-limited; answer extracted directly from knowledge base source ${primaryChunk.id}.]`;
-    } else {
-      fallbackAnswer = "I don't have that information in my knowledge base.";
+    // Auto-retry once after 5 seconds if rate limited (429)
+    if (parsed.status === 'rate_limited') {
+      console.log('Gemini 429 rate limit reached. Retrying once after 5 seconds automatically...');
+      await delay(5000);
+      try {
+        geminiResponse = await ai.models.generateContent({
+          model: GEMINI_MODEL,
+          contents: promptContent,
+          config: {
+            systemInstruction,
+            temperature: 0.2,
+          },
+        });
+        executionError = null; // retry succeeded!
+      } catch (retryErr: any) {
+        executionError = retryErr;
+      }
     }
+  }
 
-    res.json({
-      answer: fallbackAnswer,
+  if (executionError || !geminiResponse) {
+    const parsed = parseGeminiError(executionError);
+    return res.json({
+      answer: directFallbackAnswer,
       sources: retrievedChunks,
-      geminiOffline: true,
-      errorDetails: err.message,
+      geminiOnline: false,
+      kbLoaded: true,
+      errorType: parsed.status,
+      errorCode: parsed.code,
+      geminiError: parsed.message,
     });
   }
-});
+
+  const aiAnswer = geminiResponse.text || "I don't have that information.";
+
+  res.json({
+    answer: aiAnswer,
+    sources: retrievedChunks,
+    geminiOnline: true,
+    kbLoaded: true,
+  });
+}
+
+app.post('/api/assistant', handleAssistantRequest);
+// Maintain /api/chat alias for compatibility
+app.post('/api/chat', handleAssistantRequest);
 
 // ==========================================
 // 5. Mount Vite or static server

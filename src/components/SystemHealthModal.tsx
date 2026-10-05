@@ -1,5 +1,5 @@
 import React from 'react';
-import { X, CheckCircle2, AlertTriangle, XCircle, RefreshCw, ShieldCheck } from 'lucide-react';
+import { X, CheckCircle2, AlertTriangle, XCircle, RefreshCw, ShieldCheck, BookOpen } from 'lucide-react';
 
 interface SystemHealthModalProps {
   isOpen: boolean;
@@ -21,6 +21,53 @@ export const SystemHealthModal: React.FC<SystemHealthModalProps> = ({
   const fb = healthData?.footballData;
   const sdb = healthData?.sportsDb;
   const gemini = healthData?.gemini;
+  const kb = healthData?.knowledgeBase;
+
+  const getGeminiBadge = () => {
+    const status = gemini?.status;
+    if (status === 'online') {
+      return {
+        label: 'Online',
+        bg: 'bg-emerald-100 text-emerald-800 border-emerald-300',
+        icon: <CheckCircle2 className="w-3.5 h-3.5" />,
+      };
+    }
+    if (status === 'missing_key') {
+      return {
+        label: 'Missing Key',
+        bg: 'bg-slate-100 text-slate-700 border-slate-300',
+        icon: <AlertTriangle className="w-3.5 h-3.5" />,
+      };
+    }
+    if (status === 'auth_failed') {
+      return {
+        label: `Auth Failed (${gemini?.code || 401})`,
+        bg: 'bg-red-100 text-red-800 border-red-300',
+        icon: <XCircle className="w-3.5 h-3.5" />,
+      };
+    }
+    if (status === 'rate_limited') {
+      return {
+        label: 'Rate Limited (429)',
+        bg: 'bg-amber-100 text-amber-900 border-amber-300',
+        icon: <AlertTriangle className="w-3.5 h-3.5" />,
+      };
+    }
+    if (status === 'model_error') {
+      return {
+        label: 'Model Error (400)',
+        bg: 'bg-red-100 text-red-800 border-red-300',
+        icon: <XCircle className="w-3.5 h-3.5" />,
+      };
+    }
+    return {
+      label: 'Error',
+      bg: 'bg-red-100 text-red-800 border-red-300',
+      icon: <XCircle className="w-3.5 h-3.5" />,
+    };
+  };
+
+  const geminiBadge = getGeminiBadge();
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-fadeIn">
@@ -38,7 +85,7 @@ export const SystemHealthModal: React.FC<SystemHealthModalProps> = ({
           </div>
           <div>
             <h2 className="text-lg font-extrabold text-slate-900">System & API Health Check</h2>
-            <p className="text-xs text-slate-500 font-medium">Status reported via secure server endpoint <code className="text-blue-700 font-bold">/api/health</code></p>
+            <p className="text-xs text-slate-500 font-medium">Real-time status via secure server endpoint <code className="text-blue-700 font-bold">/api/health</code></p>
           </div>
         </div>
 
@@ -53,7 +100,7 @@ export const SystemHealthModal: React.FC<SystemHealthModalProps> = ({
                 </span>
               ) : fb?.status === 'auth_failed' ? (
                 <span className="flex items-center gap-1 text-xs font-bold px-2.5 py-0.5 rounded-full bg-red-100 text-red-800 border border-red-300">
-                  <XCircle className="w-3.5 h-3.5" /> Auth Failed (403)
+                  <XCircle className="w-3.5 h-3.5" /> Auth Failed ({fb?.code || 403})
                 </span>
               ) : (
                 <span className="flex items-center gap-1 text-xs font-bold px-2.5 py-0.5 rounded-full bg-amber-100 text-amber-900 border border-amber-300">
@@ -65,6 +112,39 @@ export const SystemHealthModal: React.FC<SystemHealthModalProps> = ({
             <div className="mt-2 text-[11px] text-slate-600 bg-white p-2.5 rounded-xl border border-slate-200">
               📌 <strong>Important notice:</strong> Scores on the free plan are delayed, so FanFlow plans ahead and never labels scores as live. 403 status indicates missing or invalid token, not a paywall.
             </div>
+          </div>
+
+          {/* Gemini AI */}
+          <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200 shadow-2xs">
+            <div className="flex items-center justify-between mb-1.5">
+              <span className="font-bold text-sm text-slate-900">Gemini AI (Flash Model)</span>
+              <span className={`flex items-center gap-1 text-xs font-bold px-2.5 py-0.5 rounded-full border ${geminiBadge.bg}`}>
+                {geminiBadge.icon} {geminiBadge.label}
+              </span>
+            </div>
+            <p className="text-xs text-slate-600 leading-relaxed font-medium">{gemini?.message}</p>
+          </div>
+
+          {/* Knowledge Base */}
+          <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200 shadow-2xs">
+            <div className="flex items-center justify-between mb-1.5">
+              <span className="font-bold text-sm text-slate-900 flex items-center gap-1.5">
+                <BookOpen className="w-4 h-4 text-blue-600" />
+                Knowledge Base (knowledge.md)
+              </span>
+              {kb?.status === 'loaded' ? (
+                <span className="flex items-center gap-1 text-xs font-bold px-2.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-300">
+                  <CheckCircle2 className="w-3.5 h-3.5" /> {kb.chunkCount} Chunks
+                </span>
+              ) : (
+                <span className="flex items-center gap-1 text-xs font-bold px-2.5 py-0.5 rounded-full bg-red-100 text-red-800 border border-red-300">
+                  <XCircle className="w-3.5 h-3.5" /> Not Loaded
+                </span>
+              )}
+            </div>
+            <p className="text-xs text-slate-600 leading-relaxed font-medium">
+              {kb?.message || 'Parsed into heading chunks for retrieval'}
+            </p>
           </div>
 
           {/* TheSportsDB */}
@@ -82,24 +162,6 @@ export const SystemHealthModal: React.FC<SystemHealthModalProps> = ({
               )}
             </div>
             <p className="text-xs text-slate-600 leading-relaxed font-medium">{sdb?.message}</p>
-            <p className="mt-1 text-[11px] text-slate-500">Free key 123 in URL path. Team badges and details cached for 7 days.</p>
-          </div>
-
-          {/* Gemini API */}
-          <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200 shadow-2xs">
-            <div className="flex items-center justify-between mb-1.5">
-              <span className="font-bold text-sm text-slate-900">Gemini AI (Bonus RAG)</span>
-              {gemini?.status === 'configured' ? (
-                <span className="flex items-center gap-1 text-xs font-bold px-2.5 py-0.5 rounded-full bg-blue-100 text-blue-800 border border-blue-300">
-                  <CheckCircle2 className="w-3.5 h-3.5" /> Configured
-                </span>
-              ) : (
-                <span className="flex items-center gap-1 text-xs font-bold px-2.5 py-0.5 rounded-full bg-slate-100 text-slate-700 border border-slate-300">
-                  <AlertTriangle className="w-3.5 h-3.5" /> Missing
-                </span>
-              )}
-            </div>
-            <p className="text-xs text-slate-600 leading-relaxed font-medium">{gemini?.message}</p>
           </div>
         </div>
 

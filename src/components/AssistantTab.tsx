@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Send, Bot, User, ChevronDown, ChevronUp, Sparkles, BookOpen, AlertCircle } from 'lucide-react';
+import { Send, Bot, User, ChevronDown, ChevronUp, Sparkles, BookOpen, AlertCircle, AlertTriangle, FileQuestion } from 'lucide-react';
 import type { Venue } from '../data/simulatedDb.ts';
 import type { MatchFixture } from '../shared/scoringEngine.ts';
 
@@ -18,7 +18,9 @@ interface Message {
     section: string;
     content: string;
   }>;
-  geminiOffline?: boolean;
+  geminiOnline?: boolean;
+  geminiError?: string;
+  kbLoaded?: boolean;
 }
 
 const SAMPLE_QUESTIONS = [
@@ -37,7 +39,9 @@ export const AssistantTab: React.FC<AssistantTabProps> = ({
     {
       id: 'welcome',
       sender: 'assistant',
-      text: 'Hello! I am your FanFlow RAG Assistant. I answer operational questions strictly using the FanFlow knowledge base (scoring rules RULE-01 to RULE-04, DB-01 to DB-05 simulated records, and company policies FAQ-01 to FAQ-10). Every answer cites the retrieved chunk IDs.',
+      text: 'Hello! I am your FanFlow Assistant. Ask me anything about match importance rules [RULE-01 to 04], simulated venues [DB-02], subscriptions [DB-01/03], or policies [FAQ-01 to 10]. Answers cite chunk IDs, and sources are always available below.',
+      geminiOnline: true,
+      kbLoaded: true,
     },
   ]);
   const [inputQuery, setInputQuery] = useState('');
@@ -63,7 +67,8 @@ export const AssistantTab: React.FC<AssistantTabProps> = ({
     setIsLoading(true);
 
     try {
-      const res = await fetch('/api/chat', {
+      // Call server route /api/assistant only
+      const res = await fetch('/api/assistant', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -83,20 +88,26 @@ export const AssistantTab: React.FC<AssistantTabProps> = ({
         sender: 'assistant',
         text: data.answer || "I don't have that information.",
         sources: data.sources || [],
-        geminiOffline: data.geminiOffline,
+        geminiOnline: data.geminiOnline !== false,
+        geminiError: data.geminiError,
+        kbLoaded: data.kbLoaded !== false,
       };
 
       setMessages(prev => [...prev, assistantMsg]);
+
+      // Auto-expand sources by default so user always sees the grounding
       if (data.sources && data.sources.length > 0) {
         setExpandedSources(prev => ({ ...prev, [assistantMsg.id]: true }));
       }
     } catch (err: any) {
-      console.error('Error in chat request:', err);
+      console.error('Error calling /api/assistant:', err);
       const errorMsg: Message = {
         id: `a-${Date.now()}`,
         sender: 'assistant',
-        text: 'The assistant is currently offline or unreachable. The rest of the FanFlow planner and posters remain fully functional.',
-        geminiOffline: true,
+        text: 'Network error communicating with /api/assistant. Check server connection.',
+        geminiOnline: false,
+        geminiError: err.message,
+        kbLoaded: true,
       };
       setMessages(prev => [...prev, errorMsg]);
     } finally {
@@ -114,13 +125,13 @@ export const AssistantTab: React.FC<AssistantTabProps> = ({
           </div>
           <div>
             <div className="flex items-center gap-2">
-              <h2 className="text-base font-extrabold text-slate-900">FanFlow RAG Knowledge Assistant</h2>
-              <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-full bg-amber-100 text-amber-900 border border-amber-300">
-                Bonus Feature
+              <h2 className="text-base font-extrabold text-slate-900">FanFlow Assistant</h2>
+              <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-full bg-blue-100 text-blue-800 border border-blue-200">
+                Server-side /api/assistant
               </span>
             </div>
             <p className="text-xs text-slate-500 mt-0.5 font-medium">
-              Strictly grounded on <code>knowledge.md</code> chunks with ID citations [RULE-xx], [DB-xx], [FAQ-xx].
+              Strictly grounded on <code>knowledge.md</code> chunks with ID citations. Direct knowledge retrieval always works even if Gemini is down.
             </p>
           </div>
         </div>
@@ -130,7 +141,7 @@ export const AssistantTab: React.FC<AssistantTabProps> = ({
       <div>
         <span className="text-xs font-bold text-slate-600 mb-2 flex items-center gap-1.5">
           <Sparkles className="w-3.5 h-3.5 text-blue-600" />
-          Suggested Questions:
+          Quick Debug & Verification Queries:
         </span>
         <div className="flex flex-wrap gap-2">
           {SAMPLE_QUESTIONS.map((q, idx) => (
@@ -162,27 +173,36 @@ export const AssistantTab: React.FC<AssistantTabProps> = ({
             )}
 
             <div
-              className={`max-w-[85%] rounded-2xl p-4 text-xs sm:text-sm leading-relaxed ${
+              className={`max-w-[88%] rounded-2xl p-4 text-xs sm:text-sm leading-relaxed ${
                 msg.sender === 'user'
                   ? 'bg-blue-600 text-white font-medium rounded-tr-none shadow-xs'
                   : 'bg-white text-slate-800 border border-slate-200 rounded-tl-none shadow-xs'
               }`}
             >
-              <div className="whitespace-pre-line">{msg.text}</div>
+              {/* Message text */}
+              <div className="whitespace-pre-line font-normal">{msg.text}</div>
 
-              {/* Gemini Offline Banner */}
-              {msg.geminiOffline && (
-                <div className="mt-3 p-2.5 rounded-xl bg-amber-50 border border-amber-300 text-amber-900 text-xs flex items-start gap-2 font-medium">
-                  <AlertCircle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
-                  <span>
-                    Gemini AI live generation is currently offline or rate-limited. Grounded knowledge base sources are retrieved and displayed directly below.
-                  </span>
+              {/* Status / Error Diagnostic Notice */}
+              {msg.kbLoaded === false ? (
+                // 1. Knowledge Base Failed to Load
+                <div className="mt-3 p-3 rounded-xl bg-red-50 border border-red-200 text-red-800 text-xs flex items-start gap-2 font-bold">
+                  <FileQuestion className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
+                  <span>Knowledge base not loaded</span>
                 </div>
-              )}
+              ) : !msg.geminiOnline && msg.geminiError ? (
+                // 2. Real Gemini Error Message
+                <div className="mt-3 p-3 rounded-xl bg-amber-50 border border-amber-300 text-amber-950 text-xs flex items-start gap-2 font-semibold">
+                  <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                  <div>
+                    <span className="font-extrabold block text-amber-900">Gemini Status Notice:</span>
+                    <span>{msg.geminiError}</span>
+                  </div>
+                </div>
+              ) : null}
 
               {/* Collapsible Sources Drawer */}
               {msg.sources && msg.sources.length > 0 && (
-                <div className="mt-3 pt-3 border-t border-slate-200">
+                <div className="mt-3.5 pt-3 border-t border-slate-200">
                   <button
                     onClick={() => toggleSource(msg.id)}
                     className="flex items-center gap-1.5 text-xs font-bold text-blue-700 hover:text-blue-900 transition-colors"
@@ -197,20 +217,20 @@ export const AssistantTab: React.FC<AssistantTabProps> = ({
                   </button>
 
                   {expandedSources[msg.id] && (
-                    <div className="mt-2.5 space-y-2 animate-fadeIn">
+                    <div className="mt-2.5 space-y-2.5 animate-fadeIn">
                       {msg.sources.map((chunk, cIdx) => (
                         <div
                           key={cIdx}
-                          className="p-3 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-800"
+                          className="p-3 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-800 shadow-2xs"
                         >
                           <div className="flex items-center justify-between mb-1">
-                            <span className="font-mono font-black text-blue-700 text-[11px]">
+                            <span className="font-mono font-black text-blue-700 text-[11px] px-1.5 py-0.5 rounded bg-blue-100 border border-blue-200">
                               {chunk.id}
                             </span>
                             <span className="text-[10px] font-semibold text-slate-500 uppercase">{chunk.section}</span>
                           </div>
                           <div className="font-bold text-slate-900 mb-1">{chunk.heading}</div>
-                          <div className="text-[11px] text-slate-600 line-clamp-3 leading-relaxed">
+                          <div className="text-[11px] text-slate-600 whitespace-pre-line leading-relaxed">
                             {chunk.content}
                           </div>
                         </div>
@@ -236,7 +256,7 @@ export const AssistantTab: React.FC<AssistantTabProps> = ({
             </div>
             <div className="bg-white border border-slate-200 rounded-2xl rounded-tl-none p-3.5 text-xs text-slate-600 flex items-center gap-2 shadow-2xs font-medium">
               <span className="w-2 h-2 rounded-full bg-blue-600 animate-ping"></span>
-              Retrieving knowledge chunks and consulting Gemini 3.8 Flash...
+              Retrieving top 4 chunks & querying Gemini...
             </div>
           </div>
         )}
